@@ -4,6 +4,11 @@ import tensorflow as tf
 from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler
 from sklearn.model_selection import train_test_split
 from sklearn.metrics import f1_score
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization
+from tensorflow.keras.callbacks import EarlyStopping
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.regularizers import l1_l2
 
 # Load dataset CSV
 file_path = 'dummy_data_with_bias.csv'
@@ -31,22 +36,51 @@ y = searches_encoded.astype(np.float32)
 # Split data
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
+'''
 # Build model
 model = tf.keras.Sequential([
-    tf.keras.layers.Dense(128, activation='relu', input_shape=(X.shape[1],)),
-    tf.keras.layers.Dense(256, activation='relu'),
-    tf.keras.layers.Dropout(0.5),  # Add dropout to prevent overfitting
-    tf.keras.layers.Dense(128, activation='relu'),
-    tf.keras.layers.Dense(y.shape[1], activation='sigmoid')  # Adjust output layer for multi-label classification
-])
+    Dense(128, activation='relu', input_shape=(X.shape[1],)),
+    BatchNormalization(),
+    Dense(256, activation='relu'),
+    Dropout(0.3),  # Adjusted dropout rate
+    BatchNormalization(),
+    Dense(128, activation='relu'),
+    Dropout(0.3),  # Adjusted dropout rate
+    Dense(y.shape[1], activation='sigmoid')
+]) 
 
 # Compile model
 model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),  # Experiment with learning rates
               loss='binary_crossentropy',  # Use binary_crossentropy for multi-label classification
               metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()])
+'''
+#'''
+def build_model(input_shape, output_shape, learning_rate=0.001, l1=1e-5, l2=1e-4, dropout_rate=0.23):# 0.25 > dropout rate > 0.2 best results currently: 0.23
+    model = Sequential([
+        Dense(128, activation='relu', input_shape=(input_shape,), kernel_regularizer=l1_l2(l1=l1, l2=l2)),
+        BatchNormalization(),
+        Dense(256, activation='relu', kernel_regularizer=l1_l2(l1=l1, l2=l2)),
+        Dropout(dropout_rate),
+        BatchNormalization(),
+        Dense(128, activation='relu', kernel_regularizer=l1_l2(l1=l1, l2=l2)),
+        Dropout(dropout_rate),
+        Dense(output_shape, activation='sigmoid')
+    ])
+    model.compile(optimizer=Adam(learning_rate=learning_rate),
+                  loss='binary_crossentropy',
+                  metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()])
+    return model
+
+# Example of using the function to create a model
+model = build_model(input_shape=X_train.shape[1], output_shape=y_train.shape[1], learning_rate=0.001, l1=1e-5, l2=1e-4, dropout_rate=0.3)
+
+#'''
+
+
+early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
 # Train model
-history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data=(X_test, y_test))  # Reduce epochs to avoid overfitting
+history = model.fit(X_train, y_train, epochs=150, batch_size=32, validation_data=(X_test, y_test))  # Reduce epochs to avoid overfitting
 
 # Evaluate model
 loss, accuracy, precision, recall = model.evaluate(X_test, y_test)
@@ -64,7 +98,7 @@ print(f'F1 Score: {f1}')
 
 # Save the Keras model
 model_save_path = 'saved_model'
-model.export(model_save_path)  # Corrected from model.export to model.save
+model.export(model_save_path)
 
 # Convert the saved model to TFLite
 converter = tf.lite.TFLiteConverter.from_saved_model(model_save_path)
@@ -77,15 +111,9 @@ with open(tflite_model_path, 'wb') as f:
 
 print(f'TFLite model saved to {tflite_model_path}')
 
-import pandas as pd
-import numpy as np
-from sklearn.preprocessing import StandardScaler  # Assuming you're using StandardScaler for scaling
-
-# Assuming `model` is your trained model and `scaler` is your StandardScaler instance
-
-# Updated new_data without 'Searches'
+# Prepare new data for prediction
 new_data = {
-    'Email': ['c2tip58a@gmail.com'],  # This line is not needed for prediction and will be removed in preprocessing
+    'Email': ['c2tip58a@gmail.com'],
     'P01': [19],
     'P02': [0],
     'P03': [19],
@@ -102,30 +130,29 @@ new_data = {
     'P14': [0],
     'P15': [7]
 }
-# Assuming `model` is your TensorFlow/Keras model
-input_shape = model.input_shape
-print("Model's expected input shape:", input_shape)
 
-# If the input shape is not [1,15], adjust your model architecture or data preprocessing accordingly
-# Convert to DataFrame
 new_df = pd.DataFrame(new_data)
 
-# Drop 'Email' column as it's not used in prediction
+# Drop the 'Email' column
 new_df = new_df.drop(['Email'], axis=1)
 
 # Convert to numpy array
 new_X = new_df.values.astype(np.float32)
 
 # Scale the data
-# Assuming `scaler` has been fitted on the training data
 new_X_scaled = scaler.transform(new_X)
 
-# Use the model to predict
-predictions = model.predict(new_X_scaled)
+# Create a zero array for one-hot encoded product labels
+dummy_searches = np.zeros((new_X_scaled.shape[0], searches_encoded.shape[1]))
 
-# Assuming the model outputs probabilities for each class (P01 to P15),
-# and you need to find the top 6 predictions
+# Combine scaled numerical features with dummy one-hot encoded labels
+new_X_combined = np.hstack((new_X_scaled, dummy_searches))
+
+# Use the model to predict
+predictions = model.predict(new_X_combined)
+
+# Find the top 6 predictions
 top_6_indices = np.argsort(predictions, axis=1)[0][-6:]
-top_6_searches = new_df.columns[top_6_indices].tolist()
+top_6_searches = [f'P{str(i+1).zfill(2)}' for i in top_6_indices]
 
 print("Top 6 Predicted Searches:", top_6_searches)

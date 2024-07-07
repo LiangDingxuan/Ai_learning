@@ -1,10 +1,22 @@
+import pandas as pd
 import numpy as np
 import tensorflow as tf
-from sklearn.preprocessing import MultiLabelBinarizer, StandardScaler
-import pandas as pd
+from sklearn.preprocessing import StandardScaler
+import joblib
 
-# Define the data
-data = {
+# Load the TFLite model and allocate tensors
+interpreter = tf.lite.Interpreter(model_path="model.tflite")
+interpreter.allocate_tensors()
+
+# Get input and output tensors
+input_details = interpreter.get_input_details()
+output_details = interpreter.get_output_details()
+
+# Load the scaler
+scaler = joblib.load('scaler.pkl')
+
+# Prepare new data for prediction
+new_data = {
     'Email': ['c2tip58a@gmail.com'],
     'P01': [19],
     'P02': [0],
@@ -20,106 +32,38 @@ data = {
     'P12': [10],
     'P13': [4],
     'P14': [0],
-    'P15': [7],
-    'Searches': ["P01,P03,P05,P06,P12,P10"]
+    'P15': [7]
 }
 
-# Convert data to DataFrame
-df = pd.DataFrame(data)
+new_df = pd.DataFrame(new_data)
 
-# Preprocess the dataset
-df['Searches'] = df['Searches'].apply(lambda x: x.split(','))
+# Drop the 'Email' column
+new_df = new_df.drop(['Email'], axis=1)
 
-# Use MultiLabelBinarizer to one-hot encode the product labels
-mlb = MultiLabelBinarizer()
-searches_encoded = mlb.fit_transform(df['Searches'])
+# Convert to numpy array
+new_X = new_df.values.astype(np.float32)
 
-# Extract and standardize numerical features
-X_numerical = df.drop(['Email', 'Searches'], axis=1).values.astype(np.float32)
-scaler = StandardScaler()
-X_numerical_scaled = scaler.fit_transform(X_numerical)
+# Scale the data
+new_X_scaled = scaler.transform(new_X)
 
-# Ensure consistent preprocessing by loading the training data and fitting the scaler and binarizer
-training_data = pd.read_csv('dummy_data_with_bias.csv')
-training_data['Searches'] = training_data['Searches'].apply(lambda x: x.split(','))
-training_searches_encoded = mlb.fit_transform(training_data['Searches'])
-training_X_numerical = training_data.drop(['Email', 'Searches'], axis=1).values.astype(np.float32)
-scaler.fit(training_X_numerical)
+# Create a zero array for one-hot encoded product labels
+dummy_searches = np.zeros((new_X_scaled.shape[0], len(input_details[0]['shape']) - new_X_scaled.shape[1]))
 
-# Transform the test data
-X_numerical_scaled = scaler.transform(X_numerical)
-X_test = np.hstack((X_numerical_scaled, searches_encoded)).astype(np.float32)
+# Combine scaled numerical features with dummy one-hot encoded labels
+new_X_combined = np.hstack((new_X_scaled, dummy_searches))
 
-# Load the TFLite model and allocate tensors
-tflite_model_path = 'model.tflite'
-interpreter = tf.lite.Interpreter(model_path=tflite_model_path)
-interpreter.allocate_tensors()
+# Set the tensor to point to the input data to be inferred
+interpreter.set_tensor(input_details[0]['index'], new_X_combined)
 
-# Get input and output tensors
-input_details = interpreter.get_input_details()
-output_details = interpreter.get_output_details()
-
-# Check the expected input shape
-expected_input_shape = input_details[0]['shape']
-print(f'Expected input shape: {expected_input_shape}')
-
-# Set the input tensor, ensure the shape matches the expected shape
-print(f"Current shape of X_test: {X_test.shape}")
-# Expected shape
-expected_features = 30
-
-# If X_test does not have the expected shape, you need to adjust it.
-# This could involve adding missing features, or modifying the preprocessing pipeline.
-# This is a placeholder for whatever steps are necessary to adjust X_test.
-# For example, if missing features are zeros:
-if X_test.shape[1] < expected_features:
-    missing_features = expected_features - X_test.shape[1]
-    X_test = np.hstack([X_test, np.zeros((X_test.shape[0], missing_features))])
-
-# Validate the shape after adjustment
-assert X_test.shape[1] == expected_features, f"Shape after adjustment: {X_test.shape[1]}, expected: {expected_features}"
-
-if X_test.shape[1] != expected_input_shape[1]:
-    raise ValueError(f"Dimension mismatch: Got {X_test.shape[1]} but expected {expected_input_shape[1]}")
-
-# Add a batch dimension to the test data if necessary
-if len(X_test.shape) == 1:
-    X_test = np.expand_dims(X_test, axis=0)
-
-# Convert X_test to FLOAT32 before setting the tensor
-X_test = X_test.astype(np.float32)
-# Set the input tensor
-interpreter.set_tensor(input_details[0]['index'], X_test)
-
-# Invoke the model
+# Run the interpreter
 interpreter.invoke()
 
-# Get the output tensor
+# The function `get_tensor()` returns a copy of the tensor data
+# Use `tensor()` in order to get a pointer to the tensor
 output_data = interpreter.get_tensor(output_details[0]['index'])
 
-# Convert predictions to binary outputs
-predictions_binary = (output_data > 0.5).astype(int)
+# Find the top 6 predictions
+top_6_indices = np.argsort(output_data, axis=1)[0][-6:]
+top_6_searches = [f'P{str(i+1).zfill(2)}' for i in top_6_indices]
 
-# Decode the predictions to product labels
-predicted_products = mlb.inverse_transform(predictions_binary)
-print(f'Predicted products: {predicted_products}')
-
-# Compare with actual labels
-actual_labels = searches_encoded
-
-import numpy as np
-
-# Assuming actual_labels is a numpy array with shape (n_samples, 6)
-# And you have a MultiLabelBinarizer (mlb) trained on 15 classes
-
-# Create an empty array with the correct shape (n_samples, 15)
-adjusted_labels = np.zeros((actual_labels.shape[0], 15))
-
-# Assuming the 6 classes in actual_labels correspond to the first 6 classes the mlb was trained on
-# Copy the actual_labels into the first 6 columns of adjusted_labels
-adjusted_labels[:, :6] = actual_labels
-
-# Now use the adjusted_labels with the correct shape for inverse_transform
-actual_products = mlb.inverse_transform(adjusted_labels)
-
-print(f'Actual products: {actual_products}')
+print("Top 6 Predicted Searches:", top_6_searches)

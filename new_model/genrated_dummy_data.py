@@ -37,13 +37,13 @@ def generate_searches(orders):
     # Pick the top 6 items based on the order counts
     top_items = sorted(range(len(orders)), key=lambda i: orders[i], reverse=True)[:6]
     
-    # Introduce randomness
-    if random.random() < 0.2:  # 20% chance to replace one of the top items with a random item
+    # Introduce less randomness
+    if random.random() < 0.03:  # 5% chance to replace one of the top items with a random item
         top_items[random.randint(0, 5)] = random.randint(0, 14)
     
     return ",".join([f"P{str(item+1).zfill(2)}" for item in top_items])
 
-# Generate 5000 rows of dummy data
+# Generate 20,000 rows of dummy data
 for _ in range(20000):
     email = generate_email()
     orders = generate_orders()
@@ -59,4 +59,4 @@ df = pd.DataFrame(data)
 
 # Save to CSV
 df.to_csv('dummy_data_with_bias.csv', index=False)
-print("Generated 20000 dummy tuples with bias and saved to 'dummy_data_with_bias.csv'")
+print("Generated 20,000 dummy tuples with bias and saved to 'dummy_data_with_bias.csv'")
