@@ -68,26 +68,42 @@ def build_model(input_shape, output_shape, learning_rate=0.001, l1=1e-5, l2=1e-4
         Dense(output_shape, activation='sigmoid')
     ])
     model.compile(optimizer=Adam(learning_rate=learning_rate),
-                  loss='binary_crossentropy', 
+                  loss='binary_crossentropy',
                   metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()])
     return model
 
+# Set up the CSV file for results
+results = []
 
-''''''
-# Example of using the function to create a model
-model = build_model(input_shape=X_train.shape[1], output_shape=y_train.shape[1], learning_rate=0.001, l1=1e-5, l2=1e-4, dropout_rate=0.12)# 0.25 > dropout rate > 0.2 best results currently: 0.23
+# Iterate over dropout rates
+for dropout_rate in np.arange(0.1, 0.41, 0.01):
+    dropout_rate = round(dropout_rate, 2)
+    accuracies = []
+    
+    # Run the model 5 times for each dropout rate
+    for i in range(5):
+        model = build_model(input_shape=X_train.shape[1], output_shape=y_train.shape[1], dropout_rate=dropout_rate)
+        
+        # Early stopping
+        early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+        
+        # Train model
+        model.fit(X_train, y_train, epochs=150, batch_size=32, validation_data=(X_test, y_test), callbacks=[early_stopping], verbose=0)
+        
+        # Evaluate model
+        loss, accuracy, precision, recall = model.evaluate(X_test, y_test, verbose=0)
+        print(f'Loss: {loss}, Accuracy: {accuracy}, Precision: {precision}, Recall: {recall}')
+        accuracies.append(accuracy)
+    
+    # Store results
+    results.append([dropout_rate] + accuracies)
 
-#'''
+# Save results to CSV file
+results_df = pd.DataFrame(results, columns=['dropout_rate', 'test1', 'test2', 'test3', 'test4', 'test5'])
+results_df.to_csv('dropout_rate_results.csv', index=False)
+print(f'Results saved to dropout_rate_results.csv')
 
 
-early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
-
-# Train model
-history = model.fit(X_train, y_train, epochs=2000, batch_size=32, validation_data=(X_test, y_test))  # Reduce epochs to avoid overfitting
-
-# Evaluate model
-loss, accuracy, precision, recall = model.evaluate(X_test, y_test)
-print(f'Loss: {loss}, Accuracy: {accuracy}, Precision: {precision}, Recall: {recall}')
 
 # Predict using model
 predictions = model.predict(X_test)
