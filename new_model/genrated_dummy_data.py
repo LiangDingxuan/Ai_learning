@@ -44,7 +44,7 @@ def generate_searches(orders):
     return ",".join([f"P{str(item+1).zfill(2)}" for item in top_items])
 
 # Generate 20,000 rows of dummy data
-for _ in range(20000):
+for _ in range(200000):
     email = generate_email()
     orders = generate_orders()
     searches = generate_searches(orders)
@@ -56,7 +56,3 @@ for _ in range(20000):
 
 # Create DataFrame
 df = pd.DataFrame(data)
-
-# Save to CSV
-df.to_csv('dummy_data_with_bias.csv', index=False)
-print("Generated 20,000 dummy tuples with bias and saved to 'dummy_data_with_bias.csv'")
