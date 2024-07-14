@@ -11,7 +11,7 @@ from tensorflow.keras.optimizers import Adam
 from tensorflow.keras.regularizers import l1_l2
 
 # Load dataset CSV
-file_path = 'dummy_data_with_bias.csv'
+file_path = 'generated_data.csv'
 df = pd.read_csv(file_path)
 
 # Preprocess dataset
@@ -36,27 +36,8 @@ y = searches_encoded.astype(np.float32)
 # Split data
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-'''
-# Build model
-model = tf.keras.Sequential([
-    Dense(128, activation='relu', input_shape=(X.shape[1],)),
-    BatchNormalization(),
-    Dense(256, activation='relu'),
-    Dropout(0.3),  # Adjusted dropout rate
-    BatchNormalization(),
-    Dense(128, activation='relu'),
-    Dropout(0.3),  # Adjusted dropout rate
-    Dense(y.shape[1], activation='sigmoid')
-]) 
-
-# Compile model
-model.compile(optimizer=tf.keras.optimizers.Adam(learning_rate=0.001),  # Experiment with learning rates
-              loss='binary_crossentropy',  # Use binary_crossentropy for multi-label classification
-              metrics=['accuracy', tf.keras.metrics.Precision(), tf.keras.metrics.Recall()])
-'''
-#'''
-def build_model(input_shape, output_shape, learning_rate=0.001, l1=1e-5, l2=1e-4, dropout_rate = 0.3):
-    print("dropout rate is ---------------------------------: ", dropout_rate)
+# Build model function
+def build_model(input_shape, output_shape, learning_rate=0.001, l1=1e-5, l2=1e-4, dropout_rate=0.12):
     model = Sequential([
         Dense(128, activation='relu', input_shape=(input_shape,), kernel_regularizer=l1_l2(l1=l1, l2=l2)),
         BatchNormalization(),
@@ -88,7 +69,7 @@ for dropout_rate in np.arange(0.1, 0.41, 0.01):
         early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
         
         # Train model
-        model.fit(X_train, y_train, epochs=150, batch_size=32, validation_data=(X_test, y_test), callbacks=[early_stopping], verbose=0)
+        model.fit(X_train, y_train, epochs=15, batch_size=32, validation_data=(X_test, y_test), callbacks=[early_stopping], verbose=0)
         
         # Evaluate model
         loss, accuracy, precision, recall = model.evaluate(X_test, y_test, verbose=0)
@@ -102,8 +83,6 @@ for dropout_rate in np.arange(0.1, 0.41, 0.01):
 results_df = pd.DataFrame(results, columns=['dropout_rate', 'test1', 'test2', 'test3', 'test4', 'test5'])
 results_df.to_csv('dropout_rate_results.csv', index=False)
 print(f'Results saved to dropout_rate_results.csv')
-
-
 
 # Predict using model
 predictions = model.predict(X_test)
@@ -120,10 +99,9 @@ model_hdf5_save_path = 'model.h5'
 model.save(model_hdf5_save_path)
 print(f'Keras model saved to {model_hdf5_save_path}')
 
-
 # Save to saved model file
 model_save_path = 'saved_model'
-model.export(model_save_path)
+tf.saved_model.save(model, model_save_path)
 
 # Convert the saved model to TFLite
 converter = tf.lite.TFLiteConverter.from_saved_model(model_save_path)

@@ -66,7 +66,7 @@ new_X_combined = np.hstack((new_X_scaled, dummy_searches))
 predictions = model.predict(new_X_combined)
 
 # Find the top 6 predictions
-top_6_indices = np.argsort(predictions, axis=1)[0][-6:]
-top_6_searches = [f'P{str(i+1).zfill(2)}' for i in top_6_indices]
+top_15_indices = np.argsort(predictions, axis=1)[0][::-1][:15]
+top_6_searches = [f'P{str(i+1).zfill(2)}' for i in top_15_indices]
 
 print("Top 6 Predicted Searches:", top_6_searches)
