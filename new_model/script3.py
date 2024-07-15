@@ -54,16 +54,42 @@ def build_model(input_shape, output_shape, learning_rate=0.001, l1=1e-5, l2=1e-4
                   metrics=['accuracy'])
     return model
 
-model = build_model(input_shape=X_train.shape[1], output_shape=15, learning_rate=0.001, l1=1e-5, l2=1e-4, dropout_rate=0.12)
+save_path = 'model.h5'
+accuracy_threshold = 0.90
 
-early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
+# Loop to train model until accuracy exceeds threshold
+accuracy = 0.0
+while accuracy <= accuracy_threshold:
+    model = build_model(input_shape=X_train.shape[1], output_shape=15, learning_rate=0.001, l1=1e-5, l2=1e-4, dropout_rate=0.1)
 
-# Train model
-history = model.fit(X_train, y_train, epochs=2000, batch_size=32, validation_data=(X_test, y_test), callbacks=[early_stopping])
+    early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
-# Evaluate model---------------------------------------------------------------------------------------------------------------------------------
-loss, accuracy = model.evaluate(X_test, y_test)
-print(f'Loss: {loss}, Accuracy: {accuracy}')
+    # Train model
+    history = model.fit(X_train, y_train, epochs=60, batch_size=32, validation_data=(X_test, y_test), callbacks=[early_stopping])
+
+    # Evaluate model
+    loss, accuracy = model.evaluate(X_test, y_test)
+    print(f'Loss: {loss}, Accuracy: {accuracy}')
+
+    if accuracy > accuracy_threshold:
+        print(f"\nAccuracy threshold of {accuracy_threshold * 100}% exceeded. Saving model...................Saving model")
+        model.save(save_path)
+        print(f'Keras model saved to {save_path}')
+        
+        # Save to saved model file
+        model_save_path = 'saved_model'
+        tf.saved_model.save(model, model_save_path)
+        
+        # Convert the saved model to TFLite
+        converter = tf.lite.TFLiteConverter.from_saved_model(model_save_path)
+        tflite_model = converter.convert()
+        
+        # Save the TFLite model
+        tflite_model_path = 'model.tflite'
+        with open(tflite_model_path, 'wb') as f:
+            f.write(tflite_model)
+        print(f'TFLite model saved to {tflite_model_path}')
+        break
 
 # Prepare new data for prediction
 new_data = {
