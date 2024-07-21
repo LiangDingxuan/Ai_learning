@@ -1,9 +1,10 @@
+import os
 import pandas as pd
 import numpy as np
 import tensorflow as tf
 from sklearn.preprocessing import StandardScaler
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Reshape
+from tensorflow.keras.layers import Dense, Dropout, BatchNormalization, Reshape, Input
 from tensorflow.keras.callbacks import EarlyStopping
 from tensorflow.keras.models import Sequential
 from tensorflow.keras.optimizers import Adam
@@ -11,12 +12,18 @@ from tensorflow.keras.losses import SparseCategoricalCrossentropy
 from tensorflow.keras.regularizers import l1_l2
 import csv
 
+# Suppress TensorFlow informational messages
+os.environ['TF_CPP_MIN_LOG_LEVEL'] = '2'
+
 # Prepare dataset--------------------------------------------------------------------------
-# Load dataset CSV
+print("Loading dataset...")
+print("Num GPUs Available: ", len(tf.config.experimental.list_physical_devices('GPU')))
+
 file_path = 'generated_data.csv'
 df = pd.read_csv(file_path)
 
 # Preprocess dataset
+print("Preprocessing dataset...")
 df['Searches'] = df['Searches'].apply(lambda x: x.split(','))
 
 # Use a mapping to convert product labels to indices
@@ -35,12 +42,14 @@ y = np.array(df['Searches'].tolist()).astype(np.float32)
 y = np.expand_dims(y, axis=-1)  # Ensure the target has shape (num_samples, 15, 1)
 
 # Split data
+print("Splitting data...")
 X_train, X_test, y_train, y_test = train_test_split(X_numerical_scaled, y, test_size=0.2, random_state=42)
 
 # Train model------------------------------------------------------------------------------------------
 def build_model(input_shape, output_shape, learning_rate=0.001, l1=1e-5, l2=1e-4, dropout_rate=0.3):
     model = Sequential([
-        Dense(128, activation='relu', input_shape=(input_shape,), kernel_regularizer=l1_l2(l1=l1, l2=l2)),
+        Input(shape=(input_shape,)),
+        Dense(128, activation='relu', kernel_regularizer=l1_l2(l1=l1, l2=l2)),
         BatchNormalization(),
         Dense(256, activation='relu', kernel_regularizer=l1_l2(l1=l1, l2=l2)),
         Dropout(dropout_rate),
@@ -58,20 +67,23 @@ def build_model(input_shape, output_shape, learning_rate=0.001, l1=1e-5, l2=1e-4
 results = []
 dropout_rates = np.arange(0.1, 0.31, 0.01)
 
+print("Starting training loop...")
 for dropout_rate in dropout_rates:
+    print(f"Testing dropout rate: {dropout_rate}")
     for i in range(5):
-        print("Dropout rate ======================================== " , dropout_rate)
+        print(f"Run {i + 1} for dropout rate {dropout_rate}")
         model = build_model(input_shape=X_train.shape[1], output_shape=15, learning_rate=0.001, l1=1e-5, l2=1e-4, dropout_rate=dropout_rate)
         early_stopping = EarlyStopping(monitor='val_loss', patience=10, restore_best_weights=True)
 
         # Train model
-        history = model.fit(X_train, y_train, epochs=60, batch_size=32, validation_data=(X_test, y_test), callbacks=[early_stopping], verbose=0)
+        history = model.fit(X_train, y_train, epochs=30, batch_size=32, validation_data=(X_test, y_test), callbacks=[early_stopping], verbose=2)
 
         # Evaluate model
-        loss, accuracy = model.evaluate(X_test, y_test, verbose=0)
+        loss, accuracy = model.evaluate(X_test, y_test, verbose=2)
         results.append((dropout_rate, i + 1, loss, accuracy))
         print(f'Dropout Rate: {dropout_rate}, Run: {i + 1}, Loss: {loss}, Accuracy: {accuracy}')
 
+print("Writing results to CSV file...")
 # Write results to CSV file
 results_df = pd.DataFrame(results, columns=['Dropout Rate', 'Run', 'Loss', 'Accuracy'])
 results_df.to_csv('dropout_results.csv', index=False)
